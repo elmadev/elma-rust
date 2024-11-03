@@ -1,15 +1,20 @@
 use super::{BestTimes, ElmaError};
+use crate::{
+    constants::TOP10_SIZE,
+    utils::{boolean, null_padded_string, string_null_pad, to_bool, write_top10},
+    TimeEntry,
+};
 use byteorder::{WriteBytesExt, LE};
-use constants::TOP10_SIZE;
-use nom::{le_i32, le_u32, le_u8};
-use shared::TimeEntry;
+use nom::{
+    bytes::complete::take,
+    combinator::{map, verify},
+    multi::count,
+    number::complete::{le_i32, le_u32, le_u8},
+    IResult,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::str;
-use utils::boolean;
-use utils::null_padded_string;
-use utils::to_bool;
-use utils::{string_null_pad, write_top10};
 
 const PLAYER_STRUCT_SIZE: usize = 116;
 const PLAYERENTRY_PADDING: usize = 38;
@@ -150,134 +155,156 @@ pub struct State {
     pub last_played_external: String,
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(playerkeys<PlayerKeys>,
-  do_parse!(
-    throttle: le_u32 >>
-    brake: le_u32 >>
-    rotate_right: le_u32 >>
-    rotate_left: le_u32 >>
-    change_direction: le_u32 >>
-    toggle_navigator: le_u32 >>
-    toggle_timer: le_u32 >>
-    toggle_show_hide: le_u32 >>
-    (PlayerKeys {
-      throttle,
-      brake,
-      rotate_right,
-      rotate_left,
-      change_direction,
-      toggle_navigator,
-      toggle_timer,
-      toggle_show_hide,
-    })
-  )
-);
+fn parse_playerkeys(input: &[u8]) -> IResult<&[u8], PlayerKeys> {
+    let (input, throttle) = le_u32(input)?;
+    let (input, brake) = le_u32(input)?;
+    let (input, rotate_right) = le_u32(input)?;
+    let (input, rotate_left) = le_u32(input)?;
+    let (input, change_direction) = le_u32(input)?;
+    let (input, toggle_navigator) = le_u32(input)?;
+    let (input, toggle_timer) = le_u32(input)?;
+    let (input, toggle_show_hide) = le_u32(input)?;
+    Ok((
+        input,
+        PlayerKeys {
+            throttle,
+            brake,
+            rotate_right,
+            rotate_left,
+            change_direction,
+            toggle_navigator,
+            toggle_timer,
+            toggle_show_hide,
+        },
+    ))
+}
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(playerentry<PlayerEntry>,
-  do_parse!(
-    name: apply!(null_padded_string, PLAYERENTRY_NAME_SIZE) >>
-    cond_reduce!(!name.is_empty(), take!(0)) >>
-    skipped_internals: many_m_n!(NUM_INTERNALS, NUM_INTERNALS, map!(le_u8, |x| to_bool(i32::from(x)))) >>
-    take!(PLAYERENTRY_PADDING) >>
-    last_internal: le_i32 >>
-    selected_internal: le_i32 >>
-    (PlayerEntry {
-      name: name.to_string(),
-      skipped_internals,
-      last_internal,
-      selected_internal,
-    })
-  )
-);
+fn parse_playerentry(input: &[u8]) -> IResult<&[u8], PlayerEntry> {
+    let (input, name) = null_padded_string(input, PLAYERENTRY_NAME_SIZE)?;
+    let (input, skipped_internals) =
+        count(map(le_u8, |x| to_bool(i32::from(x))), NUM_INTERNALS)(input)?;
+    let (input, _) = take(PLAYERENTRY_PADDING)(input)?;
+    let (input, last_internal) = le_i32(input)?;
+    let (input, selected_internal) = le_i32(input)?;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named_args!(playernames(num: usize)<Vec<&str>>,
-  do_parse!(
-    names: many_m_n!(num, num, apply!(null_padded_string, PLAYER_NAME_SIZE)) >>
-    cond_reduce!(num <= TOP10_ENTRIES, count!(apply!(null_padded_string, PLAYER_NAME_SIZE), TOP10_ENTRIES - num)) >>
-    (names)
-  )
-);
+    Ok((
+        input,
+        PlayerEntry {
+            name: name.to_string(),
+            skipped_internals,
+            last_internal,
+            selected_internal,
+        },
+    ))
+}
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(top10part<Vec<TimeEntry>>,
-  do_parse!(
-    num_times: map!(le_u32, |x| x as usize) >>
-    times: many_m_n!(num_times, num_times, map!(le_i32, |x| x.into())) >>
-    cond_reduce!(num_times <= TOP10_ENTRIES, count!(le_i32, TOP10_ENTRIES - num_times)) >>
-    player_a_names: apply!(playernames, num_times) >>
-    player_b_names: apply!(playernames, num_times) >>
-    (izip!(times, player_a_names, player_b_names).map(|(time, a, b)| TimeEntry {names: (a.to_string(),b.to_string()), time}).collect())
-  )
-);
+fn parse_player_names(input: &[u8], num: usize) -> IResult<&[u8], Vec<&str>> {
+    let (input, names) = count(|i| null_padded_string(i, PLAYER_NAME_SIZE), num)(input)?;
+    let (input, _) = count(
+        |i| null_padded_string(i, PLAYER_NAME_SIZE),
+        TOP10_ENTRIES - num,
+    )(input)?;
+    Ok((input, names))
+}
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(top10<BestTimes>,
-  do_parse!(
-    single: top10part >>
-    multi: top10part >>
-    (BestTimes {
-      single,
-      multi,
-    })
-  )
-);
+fn parse_top10_part(input: &[u8]) -> IResult<&[u8], Vec<TimeEntry>> {
+    let (input, num_times) = map(le_u32, |x| x as usize)(input)?;
+    let (input, times) = count(map(le_i32, |x| x.into()), num_times)(input)?;
+    let (input, _) = count(le_i32, TOP10_ENTRIES - num_times)(input)?;
+    let (input, player_a_names) = parse_player_names(input, num_times)?;
+    let (input, player_b_names) = parse_player_names(input, num_times)?;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(parse_state<State>,
-  do_parse!(
-    version: verify!(le_u32, |x| x == STATE_START) >>
-    times: many_m_n!(NUM_LEVELS, NUM_LEVELS, top10) >>
-    // Using 0 here instead of 1 generates a warning. Workaround with map_opt + opt.
-    players: map_opt!(opt!(many_m_n!(1, NUM_PLAYERS, playerentry)), |x: Option<_>| x.or_else(|| Some(vec![]))) >>
-    cond_reduce!(players.len() <= NUM_PLAYERS, take!((NUM_PLAYERS - players.len()) * PLAYER_STRUCT_SIZE)) >>
-    num_players: le_u32 >>
-    cond_reduce!(players.len() == num_players as usize, take!(0)) >>
-    player_a_name: apply!(null_padded_string, PLAYER_NAME_SIZE) >>
-    player_b_name: apply!(null_padded_string, PLAYER_NAME_SIZE) >>
-    sound_enabled: boolean >>
-    sound_optimization: map!(le_i32, |i| if i == 0 {SoundOptimization::BestQuality} else {SoundOptimization::Compatibility}) >>
-    play_mode: map!(le_i32, |i| if i == 0 {PlayMode::Multi} else {PlayMode::Single}) >>
-    flagtag: boolean >>
-    swap_bikes: map!(boolean, |x| !x) >>
-    video_detail: map!(le_i32, |i| if i == 0 {VideoDetail::Low} else {VideoDetail::High}) >>
-    animated_objects: boolean >>
-    animated_menus: boolean >>
-    player_a_keys: playerkeys >>
-    player_b_keys: playerkeys >>
-    inc_screen_size_key: le_u32 >>
-    dec_screen_size_key: le_u32 >>
-    screenshot_key: le_u32 >>
-    last_edited_lev_name: apply!(null_padded_string, LEVEL_NAME_SIZE) >>
-    last_played_external: apply!(null_padded_string, LEVEL_NAME_SIZE) >>
-    verify!(le_u32, |x| x == STATE_END || x == STATE_END_ALT) >>
-  (State {
-    path: None,
-    version,
-    times,
-    players,
-    player_a_name: player_a_name.to_string(),
-    player_b_name: player_b_name.to_string(),
-    player_a_keys,
-    player_b_keys,
-    sound_enabled,
-    sound_optimization,
-    play_mode,
-    flagtag,
-    swap_bikes,
-    video_detail,
-    animated_objects,
-    animated_menus,
-    dec_screen_size_key,
-    inc_screen_size_key,
-    last_edited_lev_name: last_edited_lev_name.to_string(),
-    last_played_external: last_played_external.to_string(),
-    screenshot_key,
-  })
-  )
-);
+    Ok((
+        input,
+        times
+            .into_iter()
+            .zip(player_a_names)
+            .zip(player_b_names)
+            .map(|((time, a), b)| TimeEntry {
+                names: (a.to_string(), b.to_string()),
+                time,
+            })
+            .collect(),
+    ))
+}
+
+fn parse_top10(input: &[u8]) -> IResult<&[u8], BestTimes> {
+    let (input, single) = parse_top10_part(input)?;
+    let (input, multi) = parse_top10_part(input)?;
+
+    Ok((input, BestTimes { single, multi }))
+}
+
+fn parse_state(input: &[u8]) -> IResult<&[u8], State> {
+    let (input, version) = verify(le_u32, |x| *x == STATE_START)(input)?;
+    let (input, times) = count(parse_top10, NUM_LEVELS)(input)?;
+    let (input, mut players) = count(parse_playerentry, NUM_PLAYERS)(input)?;
+    let (input, num_players) = le_u32(input)?;
+    players.truncate(num_players as usize);
+    let (input, player_a_name) = null_padded_string(input, PLAYER_NAME_SIZE)?;
+    let (input, player_b_name) = null_padded_string(input, PLAYER_NAME_SIZE)?;
+    let (input, sound_enabled) = boolean(input)?;
+    let (input, sound_optimization) = map(le_i32, |i| {
+        if i == 0 {
+            SoundOptimization::BestQuality
+        } else {
+            SoundOptimization::Compatibility
+        }
+    })(input)?;
+    let (input, play_mode) = map(le_i32, |i| {
+        if i == 0 {
+            PlayMode::Multi
+        } else {
+            PlayMode::Single
+        }
+    })(input)?;
+    let (input, flagtag) = boolean(input)?;
+    let (input, swap_bikes) = map(boolean, |x| !x)(input)?;
+    let (input, video_detail) = map(le_i32, |i| {
+        if i == 0 {
+            VideoDetail::Low
+        } else {
+            VideoDetail::High
+        }
+    })(input)?;
+    let (input, animated_objects) = boolean(input)?;
+    let (input, animated_menus) = boolean(input)?;
+    let (input, player_a_keys) = parse_playerkeys(input)?;
+    let (input, player_b_keys) = parse_playerkeys(input)?;
+    let (input, inc_screen_size_key) = le_u32(input)?;
+    let (input, dec_screen_size_key) = le_u32(input)?;
+    let (input, screenshot_key) = le_u32(input)?;
+    let (input, last_edited_lev_name) = null_padded_string(input, LEVEL_NAME_SIZE)?;
+    let (input, last_played_external) = null_padded_string(input, LEVEL_NAME_SIZE)?;
+    let (input, _) = verify(le_u32, |x| *x == STATE_END || *x == STATE_END_ALT)(input)?;
+
+    Ok((
+        input,
+        State {
+            path: None,
+            version,
+            times,
+            players,
+            player_a_name: player_a_name.to_string(),
+            player_b_name: player_b_name.to_string(),
+            player_a_keys,
+            player_b_keys,
+            sound_enabled,
+            sound_optimization,
+            play_mode,
+            flagtag,
+            swap_bikes,
+            video_detail,
+            animated_objects,
+            animated_menus,
+            dec_screen_size_key,
+            inc_screen_size_key,
+            last_edited_lev_name: last_edited_lev_name.to_string(),
+            last_played_external: last_played_external.to_string(),
+            screenshot_key,
+        },
+    ))
+}
 
 impl State {
     /// Create a new state.dat.
@@ -494,7 +521,7 @@ fn crypt_state(buffer: &mut [u8]) {
     let mut ebp8: i16 = 0x17;
     let mut ebp10: i16 = 0x2636;
 
-    for mut t in buffer.iter_mut() {
+    for t in buffer.iter_mut() {
         *t ^= (ebp8 & 0xFF) as u8;
         ebp10 = ebp10.wrapping_add((ebp8.wrapping_rem(0xD3F)).wrapping_mul(0xD3F));
         ebp8 = ebp10.wrapping_mul(0x1F).wrapping_add(0xD3F);

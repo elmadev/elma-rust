@@ -834,7 +834,7 @@ pub fn crypt_top10(top10_data: &[u8]) -> Vec<u8> {
     let mut ebp8: i16 = 0x15;
     let mut ebp10: i16 = 0x2637;
 
-    for mut t in top10.iter_mut().take(TOP10_SIZE) {
+    for t in top10.iter_mut().take(TOP10_SIZE) {
         *t ^= (ebp8 & 0xFF) as u8;
         ebp10 = ebp10.wrapping_add((ebp8.wrapping_rem(0xD3D)).wrapping_mul(0xD3D));
         ebp8 = ebp10.wrapping_mul(0x1F).wrapping_add(0xD3D);

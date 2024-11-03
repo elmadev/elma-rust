@@ -1,6 +1,9 @@
 use byteorder::{ByteOrder, WriteBytesExt, LE};
-use nom::le_i32;
+use nom::bytes::complete::take_while_m_n;
+use nom::character::complete::char;
+use nom::combinator::map_res;
 use nom::IResult;
+use nom::{bytes::complete::take, combinator::map, number::complete::le_i32};
 use std::str;
 
 use super::{BestTimes, ElmaError, Time, TimeEntry};
@@ -140,45 +143,26 @@ pub fn string_null_pad(name: &str, pad: usize) -> Result<Vec<u8>, ElmaError> {
     Ok(bytes)
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(_boolean<bool>,
-  map!(le_i32, to_bool)
-);
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named_args!(_null_padded_string(n: usize)<&str>,
-  do_parse!(
-    s: map_res!(take_while!(is_nonzero), str::from_utf8) >>
-    cond_reduce!(n >= s.len(), take!(n - s.len())) >>
-    (s)
-  )
-);
-
-// nom macros don't yet support pub(crate), so we need wrappers.
 pub(crate) fn null_padded_string(input: &[u8], n: usize) -> IResult<&[u8], &str> {
-    _null_padded_string(input, n)
+    let (input, s) = map_res(take_while_m_n(0, n - 1, |u| u != 0), str::from_utf8)(input)?;
+    let (input, _) = char('\0')(input)?;
+    let remaining_len = n - s.len() - 1;
+    let (input, _) = take(remaining_len)(input)?;
+    Ok((input, s))
 }
 
 pub(crate) fn boolean(input: &[u8]) -> IResult<&[u8], bool> {
-    _boolean(input)
+    map(le_i32, to_bool)(input)
 }
 
 pub(crate) fn to_bool(i: i32) -> bool {
     i != 0
 }
 
-pub(crate) fn is_nonzero(u: u8) -> bool {
-    to_bool(i32::from(u))
-}
-
 #[cfg(test)]
 mod tests {
     use super::null_padded_string;
-    use nom::verbose_errors::Context::Code;
-    use nom::Err::Error;
-    use nom::Err::Incomplete;
-    use nom::ErrorKind::CondReduce;
-    use nom::Needed::Size;
+    use nom::error::{Error, ErrorKind};
     #[test]
     fn null_pad_string() {
         assert_eq!(
@@ -195,23 +179,38 @@ mod tests {
         );
         assert_eq!(
             null_padded_string(b"Elma\0\0\0\0\0", 10),
-            Err(Incomplete(Size(6)))
+            Err(nom::Err::Error(Error {
+                input: [0, 0, 0, 0].as_slice(),
+                code: ErrorKind::Eof
+            }))
         );
         assert_eq!(
             null_padded_string(b"\0\0\0\0\0\0\0\0\0", 10),
-            Err(Incomplete(Size(10)))
+            Err(nom::Err::Error(Error {
+                input: [0, 0, 0, 0, 0, 0, 0, 0].as_slice(),
+                code: ErrorKind::Eof
+            }))
         );
         assert_eq!(
             null_padded_string(b"ElastoMani", 10),
-            Err(Incomplete(Size(1)))
+            Err(nom::Err::Error(Error {
+                input: [105].as_slice(),
+                code: ErrorKind::Char
+            }))
         );
         assert_eq!(
             null_padded_string(b"ElastoMania", 10),
-            Err(Incomplete(Size(1)))
+            Err(nom::Err::Error(Error {
+                input: [105, 97].as_slice(),
+                code: ErrorKind::Char
+            }))
         );
         assert_eq!(
             null_padded_string(b"ElastoMania\0", 10),
-            Err(Error(Code(&[0][..], CondReduce)))
+            Err(nom::Err::Error(Error {
+                input: [105, 97, 0].as_slice(),
+                code: ErrorKind::Char
+            }))
         );
     }
 }
