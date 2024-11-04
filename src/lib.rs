@@ -2,13 +2,6 @@
 
 //! Library for reading and writing Elasto Mania files.
 
-extern crate byteorder;
-extern crate rand;
-#[macro_use]
-extern crate nom;
-#[macro_use]
-extern crate itertools;
-
 use std::{io, string};
 
 /// Various constant values used throughout the game and library.

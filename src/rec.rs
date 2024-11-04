@@ -1,23 +1,19 @@
 use super::{utils::string_null_pad, ElmaError, Position};
+use crate::utils::{boolean, null_padded_string};
 use byteorder::{WriteBytesExt, LE};
-use nom::le_f32;
-use nom::le_f64;
-use nom::le_i16;
-use nom::le_i32;
-use nom::le_u32;
-use nom::le_u8;
-use nom::verbose_errors::Context::List;
-use nom::Err::Failure;
-use nom::ErrorKind::Custom;
+use itertools::izip;
+use nom::{
+    bytes::complete::take,
+    combinator::{map, map_opt, verify},
+    multi::{count, many_m_n},
+    number::complete::{le_f32, le_f64, le_i16, le_i32, le_u32, le_u8},
+    IResult,
+};
 use std::fs;
 use std::path::PathBuf;
-use utils::boolean;
-use utils::null_padded_string;
 
 // Magic arbitrary number to signify end of player data in a replay file.
 const END_OF_PLAYER: i32 = 0x00_49_2F_75;
-// Indicates an Event parsing error.
-const EVENT_ERROR: u32 = 1;
 // Replay version number that all valid replays need to have.
 const REPLAY_VERSION: u32 = 0x83;
 
@@ -221,115 +217,110 @@ impl Default for Replay {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(headerandride<(ReplayHeader, Ride)>,
-  do_parse!(
-    frame_count: map!(le_i32, |x| x as usize) >>
-    _version: verify!(le_u32, |x| x == REPLAY_VERSION) >>
-    multi: boolean >>
-    flag_tag: boolean >>
-    link: le_u32 >>
-    level: apply!(null_padded_string, 16) >>
-    bodyx: many_m_n!(frame_count, frame_count, le_f32) >>
-    bodyy: many_m_n!(frame_count, frame_count, le_f32) >>
-    leftwheelx: many_m_n!(frame_count, frame_count, le_i16) >>
-    leftwheely: many_m_n!(frame_count, frame_count, le_i16) >>
-    rightwheelx: many_m_n!(frame_count, frame_count, le_i16) >>
-    rightwheely: many_m_n!(frame_count, frame_count, le_i16) >>
-    headx: many_m_n!(frame_count, frame_count, le_i16) >>
-    heady: many_m_n!(frame_count, frame_count, le_i16) >>
-    rotation: many_m_n!(frame_count, frame_count, le_i16) >>
-    leftwheelrotation: many_m_n!(frame_count, frame_count, le_u8) >>
-    rightwheelrotation: many_m_n!(frame_count, frame_count, le_u8) >>
-    dir_and_throttle: many_m_n!(frame_count, frame_count, le_u8) >>
-    back_wheel: many_m_n!(frame_count, frame_count, le_u8) >>
-    collision_strength: many_m_n!(frame_count, frame_count, le_u8) >>
-    num_events: map!(le_i32, |x| x as usize) >>
-    events: many_m_n!(num_events, num_events, event) >>
-    verify!(le_i32, |x| x == END_OF_PLAYER) >>
-    (ReplayHeader {
-         multi,
-         flag_tag,
-         link,
-         level: level.to_string(),
-     }, Ride {
-           frames: izip!(
-            bodyx,
-            bodyy,
-            leftwheelx,
-            leftwheely,
-            rightwheelx,
-            rightwheely,
-            headx,
-            heady,
-            rotation,
-            leftwheelrotation,
-            rightwheelrotation,
-            dir_and_throttle,
-            back_wheel,
-            collision_strength).map(|(bx, by, lx, ly, rx, ry, hx, hy, r, lr, rr, dt, bw, cs)|
-              Frame {
-                  bike: Position::new(bx, by),
-                  left_wheel: Position::new(lx, ly),
-                  right_wheel: Position::new(rx, ry),
-                  head: Position::new(hx, hy),
-                  rotation: r,
-                  left_wheel_rotation: lr,
-                  right_wheel_rotation: rr,
-                  throttle_and_dir: dt,
-                  back_wheel_rot_speed: bw,
-                  collision_strength: cs,
-              }
-            ).collect(),
-           events,
-       }
-    )
-  )
-);
+fn parse_header_and_ride(input: &[u8]) -> IResult<&[u8], (ReplayHeader, Ride)> {
+    let (input, frame_count) = map(le_i32, |x| x as usize)(input)?;
+    let (input, _) = verify(le_u32, |x| *x == REPLAY_VERSION)(input)?;
+    let (input, multi) = boolean(input)?;
+    let (input, flag_tag) = boolean(input)?;
+    let (input, link) = le_u32(input)?;
+    let (input, level) = null_padded_string(input, 16)?;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(event<Event>,
-  return_error!(Custom(EVENT_ERROR),
-    do_parse!(
-      time: le_f64 >>
-      info: le_i16 >>
-      event_type: le_u8 >>
-      add_return_error!(
-        Custom(u32::from(event_type)),
-        cond_reduce!([0, 1, 4, 5, 6, 7].iter().any(|x| *x == i32::from(event_type)), take!(0))) >>
-      take!(1) >>
-      info2: le_f32 >>
-      (Event {
-           time,
-           event_type: match event_type {
-              0 => EventType::ObjectTouch(info),
-              1 => EventType::Ground(info2),
-              4 => EventType::Apple,
-              5 => EventType::Turn,
-              6 => EventType::VoltRight,
-              7 => EventType::VoltLeft,
-              _ => unreachable!("parser should have stopped earlier")
-           },
-       }
-      )
-    )
-  )
-);
+    let (input, bodyx) = count(le_f32, frame_count)(input)?;
+    let (input, bodyy) = count(le_f32, frame_count)(input)?;
+    let (input, leftwheelx) = count(le_i16, frame_count)(input)?;
+    let (input, leftwheely) = count(le_i16, frame_count)(input)?;
+    let (input, rightwheelx) = count(le_i16, frame_count)(input)?;
+    let (input, rightwheely) = count(le_i16, frame_count)(input)?;
+    let (input, headx) = count(le_i16, frame_count)(input)?;
+    let (input, heady) = count(le_i16, frame_count)(input)?;
+    let (input, rotation) = count(le_i16, frame_count)(input)?;
+    let (input, leftwheelrotation) = count(le_u8, frame_count)(input)?;
+    let (input, rightwheelrotation) = count(le_u8, frame_count)(input)?;
+    let (input, dir_and_throttle) = count(le_u8, frame_count)(input)?;
+    let (input, back_wheel) = count(le_u8, frame_count)(input)?;
+    let (input, collision_strength) = count(le_u8, frame_count)(input)?;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(parse_replay<Replay>,
-  do_parse!(
-    players: many_m_n!(1, 2, complete!(headerandride)) >>
-    (Replay {
-         flag_tag: players[0].0.flag_tag,
-         link: players[0].0.link,
-         level: players[0].0.level.to_string(),
-         path: None,
-         rides: players.into_iter().map(|x| x.1).collect(),
-     }
+    let (input, num_events) = map(le_i32, |x| x as usize)(input)?;
+    let (input, events) = count(parse_event, num_events)(input)?;
+
+    let (input, _) = verify(le_i32, |x| *x == END_OF_PLAYER)(input)?;
+
+    let header = ReplayHeader {
+        multi,
+        flag_tag,
+        link,
+        level: level.to_string(),
+    };
+
+    let frames = izip!(
+        bodyx,
+        bodyy,
+        leftwheelx,
+        leftwheely,
+        rightwheelx,
+        rightwheely,
+        headx,
+        heady,
+        rotation,
+        leftwheelrotation,
+        rightwheelrotation,
+        dir_and_throttle,
+        back_wheel,
+        collision_strength
     )
-  )
-);
+    .map(
+        |(bx, by, lx, ly, rx, ry, hx, hy, r, lr, rr, dt, bw, cs)| Frame {
+            bike: Position::new(bx, by),
+            left_wheel: Position::new(lx, ly),
+            right_wheel: Position::new(rx, ry),
+            head: Position::new(hx, hy),
+            rotation: r,
+            left_wheel_rotation: lr,
+            right_wheel_rotation: rr,
+            throttle_and_dir: dt,
+            back_wheel_rot_speed: bw,
+            collision_strength: cs,
+        },
+    )
+    .collect();
+
+    let ride = Ride { frames, events };
+
+    Ok((input, (header, ride)))
+}
+
+fn parse_event(input: &[u8]) -> IResult<&[u8], Event> {
+    let (input, time) = le_f64(input)?;
+    let (input, info) = le_i16(input)?;
+    let (input, mut event_type) = map_opt(le_u8, |event_type| match event_type {
+        0 => Some(EventType::ObjectTouch(info)),
+        1 => Some(EventType::Ground(0.0)), // will be filled below
+        4 => Some(EventType::Apple),
+        5 => Some(EventType::Turn),
+        6 => Some(EventType::VoltRight),
+        7 => Some(EventType::VoltLeft),
+        _ => None,
+    })(input)?;
+    let (input, _) = take(1u8)(input)?;
+    let (input, info2) = le_f32(input)?;
+    if let EventType::Ground(ref mut val) = event_type { *val = info2 }
+
+    Ok((input, Event { time, event_type }))
+}
+
+fn parse_replay(input: &[u8]) -> IResult<&[u8], Replay> {
+    let (input, players) = many_m_n(1, 2, parse_header_and_ride)(input)?;
+
+    let replay = Replay {
+        flag_tag: players[0].0.flag_tag,
+        link: players[0].0.link,
+        level: players[0].0.level.clone(),
+        path: None,
+        rides: players.into_iter().map(|(_, ride)| ride).collect(),
+    };
+
+    Ok((input, replay))
+}
 
 impl Replay {
     /// Return a new Replay struct.
@@ -381,13 +372,7 @@ impl Replay {
     fn parse_replay(buffer: &[u8]) -> Result<Self, ElmaError> {
         match parse_replay(buffer) {
             Ok((_, replay)) => Ok(replay),
-            Err(Failure(List(v))) => match *v.as_slice() {
-                [_, (_, Custom(event_type)), (_, Custom(EVENT_ERROR))] => {
-                    Err(ElmaError::InvalidEvent(event_type as u8))
-                }
-                _ => Err(ElmaError::InvalidReplayFile),
-            },
-            _ => Err(ElmaError::InvalidReplayFile),
+            Err(_) => Err(ElmaError::InvalidReplayFile),
         }
     }
 

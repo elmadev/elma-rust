@@ -277,7 +277,7 @@ fn load_valid_multi_replay_1_and_save() {
 fn load_invalid_event_replay() {
     assert_eq!(
         Replay::load(PATH_INVALID_EVENT).unwrap_err(),
-        elma::ElmaError::InvalidEvent(8)
+        elma::ElmaError::InvalidReplayFile
     );
 }
 

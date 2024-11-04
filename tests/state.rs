@@ -46,13 +46,13 @@ fn load_parse_save_state() {
     assert_eq!(VideoDetail::High, orig_state.video_detail);
     assert_eq!(true, orig_state.animated_objects);
     assert_eq!(false, orig_state.swap_bikes);
-    &file_original
+    file_original
         .iter()
         .zip(&file_saved)
         .enumerate()
         .for_each(|(i, (o, s))| {
             if o != s {
-                assert!(false, format!("State files differ at: {}", i))
+                assert!(false, "State files differ at: {}", i)
             }
         });
     assert_eq!(&file_original, &file_saved);
