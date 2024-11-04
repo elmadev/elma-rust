@@ -1,6 +1,6 @@
 [package]
 name = "elma"
-version = "0.1.15-alpha.0"
+version = "0.1.15"
 edition = "2021"
 authors = ["Roger Andersen <hexjelly@hexjelly.com>"]
 description = "Library for reading and writing Elasto Mania files."
