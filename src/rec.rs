@@ -18,7 +18,7 @@ const END_OF_PLAYER: i32 = 0x00_49_2F_75;
 const REPLAY_VERSION: u32 = 0x83;
 
 /// Bike direction.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Direction {
     /// Right.
     Right,

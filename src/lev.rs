@@ -50,7 +50,7 @@ pub enum Top10Save {
 }
 
 /// Type of object.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ObjectType {
     /// Apple.
     Apple {
@@ -98,7 +98,7 @@ impl Default for GravityDirection {
 }
 
 /// Object struct. Every level requires one `ObjectType::Player` Object and at least one `ObjectType::Exit` Object.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Object {
     /// Position. See `Position` struct.
     pub position: Position<f64>,
