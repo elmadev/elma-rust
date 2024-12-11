@@ -232,8 +232,6 @@ pub struct Level {
     pub pictures: Vec<Picture>,
     /// Best times lists.
     pub best_times: BestTimes,
-    /// Level path, if loaded/saved.
-    pub path: Option<PathBuf>,
 }
 
 impl Default for Level {
@@ -287,7 +285,6 @@ impl Level {
     /// ```
     pub fn new() -> Self {
         Level {
-            path: None,
             version: Version::Elma,
             link: random::<u32>(),
             integrity: [0f64; 4],
@@ -330,8 +327,7 @@ impl Level {
     pub fn load<P: Into<PathBuf>>(path: P) -> Result<Self, ElmaError> {
         let path = path.into();
         let buffer = fs::read(path.as_path())?;
-        let mut lev = Level::parse_level(&buffer)?;
-        lev.path = Some(path);
+        let lev = Level::parse_level(&buffer)?;
         Ok(lev)
     }
 
@@ -820,7 +816,6 @@ impl Level {
         let bytes = self.to_bytes(top10)?;
         let path = path.into();
         fs::write(&path.as_path(), &bytes)?;
-        self.path = Some(path);
         Ok(())
     }
 }

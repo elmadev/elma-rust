@@ -25,7 +25,6 @@ fn decrypt_encrypt_top10() {
 /// Generate a level with some arbitrary values and see if it saves.
 fn construct_level_and_save() {
     let mut level = Level {
-        path: None,
         version: Version::default(),
         link: random::<u32>(),
         integrity: [0f64; 4],
@@ -322,8 +321,7 @@ fn load_valid_level_2() {
 fn load_valid_level_2_from_bytes() {
     let level = Level::load("tests/assets/levels/test_2.lev").unwrap();
     let buffer = fs::read("tests/assets/levels/test_2.lev").unwrap();
-    let mut buf_lev = Level::from_bytes(&buffer).unwrap();
-    buf_lev.path = Some("tests/assets/levels/test_2.lev".into());
+    let buf_lev = Level::from_bytes(&buffer).unwrap();
     assert_eq!(level, buf_lev);
 }
 
