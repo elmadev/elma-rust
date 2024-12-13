@@ -198,8 +198,6 @@ pub struct Replay {
     pub link: u32,
     /// Full level filename.
     pub level: String,
-    /// Path to file.
-    pub path: Option<PathBuf>,
     /// Rides of players.
     pub rides: Vec<Ride>,
 }
@@ -315,7 +313,6 @@ fn parse_replay(input: &[u8]) -> IResult<&[u8], Replay> {
         flag_tag: players[0].0.flag_tag,
         link: players[0].0.link,
         level: players[0].0.level.clone(),
-        path: None,
         rides: players.into_iter().map(|(_, ride)| ride).collect(),
     };
 
@@ -335,7 +332,6 @@ impl Replay {
             flag_tag: false,
             link: 0,
             level: String::new(),
-            path: None,
             rides: vec![],
         }
     }
@@ -351,8 +347,7 @@ impl Replay {
     pub fn load<P: Into<PathBuf>>(path: P) -> Result<Self, ElmaError> {
         let path = path.into();
         let buffer = fs::read(path.as_path())?;
-        let mut rec = Replay::parse_replay(&buffer)?;
-        rec.path = Some(path);
+        let rec = Replay::parse_replay(&buffer)?;
         Ok(rec)
     }
 
@@ -409,7 +404,6 @@ impl Replay {
     pub fn save<P: Into<PathBuf>>(&mut self, path: P) -> Result<(), ElmaError> {
         let path = path.into();
         fs::write(path.as_path(), &self.to_bytes()?)?;
-        self.path = Some(path);
         Ok(())
     }
 

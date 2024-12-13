@@ -51,7 +51,6 @@ fn rec_default_values() {
             flag_tag: false,
             link: 0,
             level: String::new(),
-            path: None,
             rides: vec![],
         }
     );
@@ -226,8 +225,7 @@ fn load_valid_replay_1_and_save() {
 
 #[test]
 fn load_valid_replay_1_from_buffer() {
-    let mut replay = Replay::load(PATH_TEST_1).unwrap();
-    replay.path = None; // remove path for easier equality check
+    let replay = Replay::load(PATH_TEST_1).unwrap();
     let buffer = fs::read(PATH_TEST_1).unwrap();
     assert_eq!(replay, Replay::from_bytes(&buffer).unwrap());
 }
