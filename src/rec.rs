@@ -33,7 +33,7 @@ impl Default for Direction {
 }
 
 /// One frame of replay.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Frame {
     /// Bike position.
     pub bike: Position<f32>,
@@ -85,7 +85,7 @@ impl Frame {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 /// Replay events.
 pub struct Event {
     /// Time of event.
@@ -94,7 +94,7 @@ pub struct Event {
     pub event_type: EventType,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// Type of event.
 pub enum EventType {
     /// Object touch, with index of the object. The index corresponds to a sorted object array having the order: killers, apples, flowers, start.
@@ -153,7 +153,7 @@ pub(crate) struct ReplayHeader {
 }
 
 /// Player ride information (frames and events).
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct Ride {
     /// Player frames.
     pub frames: Vec<Frame>,
@@ -190,7 +190,7 @@ impl Ride {
 }
 
 /// Replay struct
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Replay {
     /// Whether replay is flag-tag or not.
     pub flag_tag: bool,

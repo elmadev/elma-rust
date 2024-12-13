@@ -130,7 +130,7 @@ impl Object {
 }
 
 /// Polygon struct.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Polygon {
     /// Grass polygon.
     pub grass: bool,
@@ -180,7 +180,7 @@ impl Polygon {
 }
 
 /// Picture struct.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Picture {
     /// Picture name.
     pub name: String,
@@ -208,7 +208,7 @@ impl Picture {
 }
 
 /// Level struct that contains all level information.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Level {
     /// Elma or Across level.
     pub version: Version,
