@@ -295,10 +295,10 @@ impl Level {
             polygons: vec![Polygon {
                 grass: false,
                 vertices: vec![
-                    Position::new(10., 0.),
-                    Position::new(10., 7.),
-                    Position::new(0., 7.),
                     Position::new(0., 0.),
+                    Position::new(0., 7.),
+                    Position::new(15., 7.),
+                    Position::new(15., 0.),
                 ],
             }],
             objects: vec![
@@ -752,7 +752,7 @@ impl Level {
 
         for poly in &self.polygons {
             for vertex in &poly.vertices {
-                pol_sum += vertex.x + vertex.y;
+                pol_sum += vertex.x - vertex.y;
             }
         }
 
@@ -763,11 +763,11 @@ impl Level {
                 ObjectType::Killer => 3,
                 ObjectType::Player => 4,
             };
-            obj_sum += obj.position.x + obj.position.y + f64::from(obj_type);
+            obj_sum += obj.position.x - obj.position.y + f64::from(obj_type);
         }
 
         for pic in &self.pictures {
-            pic_sum += pic.position.x + pic.position.y;
+            pic_sum += pic.position.x - pic.position.y;
         }
 
         let sum = (pol_sum + obj_sum + pic_sum) * 3_247.764_325_643;
