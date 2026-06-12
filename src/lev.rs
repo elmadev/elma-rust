@@ -818,6 +818,67 @@ impl Level {
         fs::write(&path.as_path(), &bytes)?;
         Ok(())
     }
+
+    #[cfg(feature = "tessellate")]
+    /// Tessellates level.
+    pub fn tessellate(&self) -> tessellate::LevelVertexBuffers {
+        tessellate::tessellate_lev(self)
+    }
+}
+
+#[cfg(feature = "tessellate")]
+/// Tessellation impl
+pub mod tessellate {
+    use bytemuck::{AnyBitPattern, NoUninit};
+    /// X, Y vertex
+    #[repr(C)]
+    #[derive(Copy, Clone, NoUninit, AnyBitPattern)]
+    pub struct Vertex2D(pub [f32; 2]);
+
+    /// Vertex Buffers for a level
+    pub type LevelVertexBuffers = lyon_tessellation::VertexBuffers<Vertex2D, u32>;
+
+    use super::Level;
+
+    use lyon_tessellation::geom::point;
+    use lyon_tessellation::{
+        BuffersBuilder, FillOptions, FillTessellator, FillVertex, FillVertexConstructor, VertexBuffers,
+    };
+
+
+    struct Vertex2DCtor;
+
+    impl FillVertexConstructor<Vertex2D> for Vertex2DCtor {
+        fn new_vertex(&mut self, vertex: FillVertex) -> Vertex2D {
+            Vertex2D(vertex.position().to_array())
+        }
+    }
+
+    /// Tesselate level polygons
+    pub(crate) fn tessellate_lev(lev: &Level) -> LevelVertexBuffers {
+        let mut buffers: VertexBuffers<Vertex2D, u32> = VertexBuffers::new();
+        let mut vertex_builder = BuffersBuilder::new(&mut buffers, Vertex2DCtor);
+        let mut tessellator = FillTessellator::new();
+        let options = FillOptions::default().with_tolerance(0.01);
+
+        let mut builder = tessellator.builder(&options, &mut vertex_builder);
+
+        for p in &lev.polygons {
+            if p.grass {
+                continue;
+            }
+            builder.reserve(p.vertices.len(), 0);
+            let first = &p.vertices[0];
+            builder.begin(point(first.x as f32, first.y as f32));
+            for v in &p.vertices[1..] {
+                builder.line_to(point(v.x as f32, v.y as f32));
+            }
+            builder.end(true);
+        }
+
+        builder.build().unwrap();
+        buffers
+    }
 }
 
 /// Decrypt and encrypt top10 list data. Same algorithm for both.
